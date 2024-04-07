@@ -1,0 +1,1561 @@
+---
+title: "ITS2"
+output: html_document
+date: "2024-02-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("qiime2R") # devtools::install_github("jbisanz/qiime2R")
+library("phyloseq")
+library("readxl")      
+library("tibble")
+library("vegan")
+library("DESeq2") #BiocManager::install("DESeq2")
+library("speedyseq") # remotes::install_github("mikemc/speedyseq") 
+library("ape")
+library("ggstar")
+library("forcats")
+library("patchwork")
+library("ggpubr")
+library("plotROC")
+library("viridis")
+library("cowplot")
+library("ggplot2")
+library("microbiome") # BiocManager::install("microbiome")
+library("microbiomeutilities")
+
+PS_ITS2_Global<-qza_to_phyloseq(
+  features="D:\\Grad_School\\Grad_Project\\Qiime_Outputs\\ITS2_UNITE\\table.qza",
+  tree="D:\\Grad_School\\Grad_Project\\Qiime_Outputs\\ITS2_UNITE\\rooted-tree.qza",
+  taxonomy="D:\\Grad_School\\Grad_Project\\Qiime_Outputs\\ITS2_UNITE\\taxonomy.qza",
+  metadata = "D:\\Grad_School\\Grad_Project\\Qiime_Outputs\\ITS2_UNITE\\ITS2_Global.tsv"
+)
+
+summarize_phyloseq(PS_ITS2_Global)
+
+```
+
+Rarefaction 
+
+```{r Rarefy, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+######################### SILVA ##############################################
+
+# Standardize number of reads in each sample using median sequencing depth ####
+
+###################
+library("ggtree") # BiocManager::install("ggtree")
+library("ggtreeExtra") #install.packages("ggExtra")
+library('MicrobiotaProcess') # BiocManager::install("MicrobiotaProcess")
+library("tidytree")
+
+summarize_phyloseq(PS_ITS2_Global)
+
+total = median(sample_sums(PS_ITS2_Global))
+standf = function(x, t=total) round(t * (x / sum(x)))
+PS_ITS2_Global_N = transform_sample_counts(PS_ITS2_Global, standf)
+
+PS_ITS2_Global_N
+
+summarize_phyloseq(PS_ITS2_Global)
+
+#Rarefication of the data - Did not work 
+set.seed(1024)
+
+rarecurve  <- ggrarecurve(PS_ITS2_Global,factorNames="RunNumber",
+                          indexNames=c("Observe"))  
+ 
+rarecurve +
+  theme(legend.spacing.y=unit(0.01,"cm"),
+        legend.text=element_text(size=4))+
+  xlim(0, 50000)+
+  ylim(0, 500)
+
+ITS2_R <- rarefy_even_depth(PS_ITS2_Global, 
+                                    rngseed=1024,
+                                    sample.size=20000,
+                                    replace=F)
+
+summarize_phyloseq(ITS2_R)
+
+```
+
+Global Trees
+```{r Splitting Phyloseq Objects, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+#Sclerotiniaceae
+Global_Sclerotiniaceae <- subset_taxa(ITS2_Filtered, Family =="Sclerotiniaceae")
+
+plot_tree(tax_glom(Global_Sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Plant", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Sample.type",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+Global_Ascosphaeraceae <- subset_taxa(ITS2_Filtered, Family =="Ascosphaeraceae")
+
+phyloseq :: tax_table(Global_Ascosphaeraceae)
+
+Global_Ascosphaeraceae_Table <-tax_table(Global_Ascosphaeraceae)
+
+phy_tree(Global_Ascosphaeraceae)
+
+plot_tree(Global_Ascosphaeraceae)
+
+plot_tree(tax_glom(Global_Ascosphaeraceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Plant", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Sample.type",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+```
+
+
+```{r Splitting Phyloseq Objects, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+PS_ITS2_BC <- subset_samples(ITS2_Filtered, Province=="BC")
+PS_ITS2_ON <- subset_samples(ITS2_Filtered, Province=="ON")
+PS_ITS2_AB <- subset_samples(ITS2_Filtered, Province=="AB")
+
+```
+BCC - ITS2 - Relative Abundance 
+
+```{r Barchart Overview}
+#Visualize the total phyloseq object 
+
+#Remove
+
+######### Barplot by attributes #######
+
+###################
+library("ggtree") # BiocManager::install("ggtree")
+library("ggtreeExtra") #install.packages("ggExtra")
+library('MicrobiotaProcess') # BiocManager::install("MicrobiotaProcess")
+library("tidytree") # install.packages("tidytree")
+
+# you need to you can detach a package
+#detach("package:MicrobiotaProcess")
+
+classtaxa <- get_taxadf(obj=PS_ITS2_BC, taxlevel=7)
+# colnames(taxmat) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species"
+
+classtaxa
+
+meta(PS_ITS2_BC)
+# The 30 most abundant taxonomy will be visualized by default (parameter `topn=30`). 
+fclass <- ggbartax(obj=classtaxa, 
+                   facetNames="Plant", 
+                   plotgroup=TRUE, 
+                   topn=50) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+fclass
+
+```
+Removeal and Re abundance 
+```{r Removal and ReAbundance - BCC, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+############### Plot tree using the tax_glom function ###########
+
+# Removal of unknown , chloroplast and mitochondria 
+
+taxa_table <- tax_table(PS_ITS2_Global_N)
+ITS2_Filtered <- subset_taxa(PS_ITS2_Global_N, Species !="Cladosporium_herbarum")
+ITS2_Filtered <- subset_taxa(ITS2_Filtered, Species !="Cladosporium_sp")
+#ITS2_Filtered <- subset_taxa(ITS2_Filtered, Order!="Saccharomycetales")
+#ON_Filtered <- subset_taxa(PS_ON, Species !="mitochondria")
+
+
+#summarize_phyloseq(PS_ON)
+
+### Did removal work ###
+
+# Levels of Taxa are 1 Domain , 2 Kingdom , 3 Phylum, 4 Class, 5 Order, 6 Family, 7 Genus , 8 Species
+
+classtaxa_removed_ITS2 <- get_taxadf(obj=ITS2_Filtered, taxlevel=7)
+
+classtaxa_removed_ITS2
+# The 30 most abundant taxonomy will be visualized by default (parameter `topn=30`). 
+rclass_ITS2 <- ggbartax(obj=classtaxa_removed_ITS2, 
+                   facetNames="Plant", 
+                   plotgroup=TRUE, 
+                   topn=50) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+rclass_ITS2
+
+```
+
+BCC Tree 
+
+```{r Trees BCC , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+
+plot_tree(tax_glom(PS_ITS2_BC, 
+                       taxrank="Family"),
+              method = "sampledodge",
+              ladderize="left",
+              nodelabf=nodeplotblank, 
+              color="Plant", 
+              label.tips="Family", 
+              text.size=3, 
+              base.spacing=0.01,
+              justify="jagged",
+              shape="Province",
+              size="abundance",
+              plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+PS_ITS2_BC_Pleosporaceae <- subset_taxa(PS_ITS2_BC, Family =="Pleosporaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_Pleosporaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Plant", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Sample.type",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Sclerotiniaceae
+PS_ITS2_BC_Sclerotiniaceae <- subset_taxa(PS_ITS2_BC, Family =="Sclerotiniaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_Sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Plant", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Sample.type",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+
+```
+
+1. BCC Analysis
+```{r Heatmaps, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+# Convert the phyloseq object to a microeco object 
+
+BiocManager::install("file2meco")
+BiocManager::install("microeco")
+
+library("file2meco")
+
+library("microeco")
+
+detach("package:microeco")
+
+detach('package:file2meco')
+ 
+
+meco_BEE_BCC<- phyloseq2meco(PS_ITS2_BC)
+
+ 
+b1 <- trans_abund$new(dataset = meco_BEE_BCC, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 30)
+
+b1$plot_heatmap(facet = c("Plant","Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+
+#Apple and Cherry only
+#PS_BC_APandC
+
+meco_BEE_BC_APandC<- phyloseq2meco(PS_BC_APandC)
+
+ 
+b1_BC_APandC <- trans_abund$new(dataset = meco_BEE_BC_APandC, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 30)
+
+b1_BC_APandC$plot_heatmap(facet = c("Plant","Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+```
+
+[1].A BCC By Fruit Farm 
+```{r SPlitting Phyloseq Objects Based on Fruit Farm , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+meta_BC
+
+PS_BC_AP <- subset_samples(PS_ITS2_BC, Plant=="Apple")
+
+PS_BC_APandC <- subset_samples(PS_ITS2_BC, Plant!="Wild forage")
+
+PS_BC_APandC <- subset_samples(PS_BCAPandC, Plant!="Blueberry")
+
+
+PS_BC_BB<- subset_samples(PS_ITS2_BC, Plant=="Blueberry")
+
+PS_BC_C <- subset_samples(PS_ITS2_BC, Plant=="Cherry")
+
+PS_BC_WF <- subset_samples(PS_ITS2_BC, Plant=="Wild forage")
+```
+
+```{r Apple and Cherry ANalysis } 
+
+PS_BC_APandC
+
+classtaxa_PS_Apple_Cherry <- get_taxadf(obj=PS_BC_APandC, taxlevel=5)
+
+fclass_Apple_Cherry <- ggbartax(obj=classtaxa_PS_Apple_Cherry, 
+                   facetNames="Sample.type", 
+                   plotgroup=TRUE, 
+                   topn=30) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+fclass_Apple_Cherry
+
+
+```
+
+```{r APPLE - all Phytopathogens  , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+# Convert the phyloseq object to a microeco object 
+
+BiocManager::install("file2meco")
+BiocManager::install("microeco")
+
+library("file2meco")
+
+library("microeco")
+
+detach("package:microeco")
+
+detach('package:file2meco')
+ 
+#Apple 
+meco_BEE_BCC_AP<- phyloseq2meco(PS_BC_AP)
+
+meta(PS_BC_AP)
+ 
+b1_BC_AP <- trans_abund$new(dataset = meco_BEE_BCC_AP, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_BC_AP$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+
+classtaxa_PS_Apple <- get_taxadf(obj=PS_BC_AP, taxlevel=5)
+# colnames(taxmat) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species"
+
+# The 30 most abundant taxonomy will be visualized by default (parameter `topn=30`). 
+fclass_Apple <- ggbartax(obj=classtaxa_PS_Apple, 
+                   facetNames="Sample.type", 
+                   plotgroup=TRUE, 
+                   topn=30) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+fclass_Apple
+
+phyloseq::tax_table(PS_ITS2_BC)
+
+meta(PS_BC_AP)
+#Circular tree - not good 
+plot_tree(PS_BC_AP, nodelabf=nodeplotboot(60,60,3), shape="Family", ladderize="left") + coord_polar(theta="y")
+#Linear
+plot_tree(tax_glom(PS_BC_AP, 
+                       taxrank="Family"),
+              method = "sampledodge",
+              ladderize="left",
+              nodelabf=nodeplotblank, 
+              color="Sample.type", 
+              label.tips="Order", 
+              text.size=3, 
+              base.spacing=0.01,
+              justify="jagged",
+              shape="Province",
+              size="abundance",
+              plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+## ERYSIPHACEAE - Blumerria graminis and Podospahera Leuctoricha 
+PS_ITS2_AP_BC_Erysiphaceae <- subset_taxa(PS_BC_AP, Family == "Erysiphaceae")
+
+#Circular Tree 
+#general 
+plot_tree(PS_ITS2_AP_BC_Erysiphaceae, color="Sample", ladderize="left") + coord_polar(theta="y")
+
+#focused
+plot_tree(PS_ITS2_AP_BC_Erysiphaceae, nodelabf=nodeplotboot(60,60,3), color="Sample.type", shape="Species",label.tips="Species" , ladderize="left") + coord_polar(theta="y")
+
+
+meta(PS_ITS2_AP_BC_Erysiphaceae)
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Erysiphaceae , 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Location",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Monilina genus - Sclerotiniacea
+PS_ITS2_AP_BC_Sclerotiniaceae <- subset_taxa(PS_BC_AP, Family == "Sclerotiniaceae")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Pleosporacea - Alternia 
+PS_ITS2_AP_BC_Pleosporaceae <- subset_taxa(PS_BC_AP, Family == "Pleosporaceae")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Pleosporaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Botryosphaeriaceae - Interesting 
+PS_ITS2_AP_BC_Botryosphaeriaceae <- subset_taxa(PS_BC_AP, Family == "Botryosphaeriaceae")
+
+phy_tree(PS_ITS2_AP_BC_Botryosphaeriaceae)
+
+plot_tree(PS_ITS2_AP_BC_Botryosphaeriaceae, "treeonly",label.tips="Species")
+
+meta(PS_ITS2_AP_BC_Botryosphaeriales)
+
+plot_tree(PS_ITS2_AP_BC_Botryosphaeriaceae, nodelabf=nodeplotboot(), ladderize="left", color="Sample.type", shape="Class")
+
+ggtree :: ggplot(PS_ITS2_AP_BC_Botryosphaeriaceae, aes(x, y)) + geom_tree() + theme_tree() + geom_rootedge()
+
+ggtree(PS_ITS2_AP_BC_Botryosphaeriaceae) + 
+  geom_nodelab(aes(label=label), hjust=-.05, size=3.5) +
+
+  geom_point(aes(x=x+hjust, shape=Family, 
+                size=Abundance), na.rm=TRUE) +
+  geom_tiplab(aes(label=Species), hjust=-.35) +                
+  theme(legend.position="right") + hexpand(.4)
+
+plot_tree(PS_ITS2_AP_BC_Botryosphaeriales, nodelabf=nodeplotboot(60,60,3), color="Sample.type", shape="Species", ladderize="left") + coord_polar(theta="y")
+
+phyloseq::tax_table(PS_ITS2_AP_BC_Botryosphaeriales)
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Botryosphaeriales, 
+                   taxrank="Family"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Glomerellaceae - no figure - mention this and include figure in supplementary material 
+PS_ITS2_AP_BC_Glomerellales <- subset_taxa(PS_BC_AP, Order == "Glomerellales")
+
+plot_tree(PS_ITS2_AP_BC_Glomerellales, nodelabf=nodeplotboot(), ladderize="left", color="Sample.type" , label.tips = "Species")
+
+phyloseq::tax_table(PS_ITS2_AP_BC_Glomerellaceae)
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Glomerellales, 
+                   taxrank="Family"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+subset_AP_BC_Glomeralles <- get_taxadf(obj=PS_ITS2_AP_BC_Glomerellales, taxlevel=7)
+
+classtaxa_removed_ITS2
+# The 30 most abundant taxonomy will be visualized by default (parameter `topn=30`). 
+rclass_AP_BC_Glomeralles<- ggbartax(obj=subset_AP_BC_Glomeralles, 
+                   facetNames="Sample.type", 
+                   plotgroup=TRUE, 
+                   topn=30) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+rclass_AP_BC_Glomeralles
+
+#Pleomassariaceae - No hit 
+
+PS_ITS2_AP_BC_Pleomassariaceae <- subset_taxa(PS_BC_AP, Order == "Pleomassariaceae")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Pleomassariaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Xylariaceae - Black root rot - no hit 
+
+PS_ITS2_AP_BC_Xylariaceae <- subset_taxa(PS_BC_AP, Order == "Xylariaceae")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Xylariaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Eurotiales -	Penicillium spp.
+
+PS_ITS2_AP_BC_Eurotiales <- subset_taxa(PS_BC_AP, Order == "Eurotiales")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Eurotiales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Capnodiales - nothing interesting 
+
+PS_ITS2_AP_BC_Capnodiales <- subset_taxa(PS_BC_AP, Order == "Capnodiales")
+
+plot_tree(tax_glom(PS_ITS2_AP_BC_Capnodiales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Physalacriaceae - nothing 
+
+PS_ITS2_BC_AP_Physalacriaceae<- subset_taxa(PS_BC_AP, Family == "Physalacriaceae")
+
+phyloseq::tax_table(PS_ITS2_BC_AP_Physalacriaceae)
+
+plot_tree(PS_ITS2_BC_AP_Physalacriaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Physalacriaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Diaporthaceae - nothing interesting.. blasting?
+
+PS_ITS2_BC_AP_Diaporthaceae<- subset_taxa(PS_BC_AP, Family == "Diaporthaceae")
+
+plot_tree(PS_ITS2_BC_AP_Diaporthaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+phyloseq::tax_table(PS_ITS2_BC_AP_Diaporthaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Diaporthaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Valsaceae
+
+PS_ITS2_BC_AP_Valsaceae<- subset_taxa(PS_BC_AP, Family == "Valsaceae")
+
+plot_tree(PS_ITS2_BC_AP_Valsaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+phyloseq::tax_table(PS_ITS2_BC_AP_Valsaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Valsaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Atheliaceae - nothing interesting may need to blast
+
+PS_ITS2_BC_AP_Atheliaceae<- subset_taxa(PS_BC_AP, Family == "Atheliaceae")
+
+plot_tree(PS_ITS2_BC_AP_Atheliaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+xTable <- phyloseq::tax_table(PS_ITS2_BC_AP_Atheliaceae)
+
+xTable
+plot_tree(tax_glom(PS_ITS2_BC_AP_Atheliaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Schizothyriaceae - no hits
+
+PS_ITS2_BC_AP_Schizothyriaceae<- subset_taxa(PS_BC_AP, Family == "Schizothyriaceae")
+
+#Leptosphaeriaceae - could not go down to species level 
+
+PS_ITS2_BC_AP_Leptosphaeriaceae<- subset_taxa(PS_BC_AP, Family == "Leptosphaeriaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Leptosphaeriaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Valsaria - No hits 
+PS_ITS2_BC_AP_Valsaria<- subset_taxa(PS_BC_AP, Genus == "Valsaria")
+
+#Drepanopezizaceae - no hits 
+PS_ITS2_BC_AP_Drepanopezizaceae<- subset_taxa(PS_BC_AP, Family == "Drepanopezizaceae")
+
+#Mucoraceae - no hits 
+PS_ITS2_BC_AP_Mucoraceae<- subset_taxa(PS_BC_AP, Family == "Mucoraceae")
+
+#Nectriaceae - no hits 
+
+PS_ITS2_BC_AP_Nectriaceae<- subset_taxa(PS_BC_AP, Family == "Nectriaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Nectriaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Peniophoraceae - no hits 
+
+PS_ITS2_BC_AP_Peniophoraceae<- subset_taxa(PS_BC_AP, Family == "Peniophoraceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Peniophoraceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Dermateaceae
+
+PS_ITS2_BC_AP_Dermateaceae<- subset_taxa(PS_BC_AP, Family == "Dermateaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Dermateaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Rhizinaceae - No hits 
+PS_ITS2_BC_AP_Rhizinaceae<- subset_taxa(PS_BC_AP, Family == "Rhizinaceae")
+
+#Oomycota - Phytopthara no hits 
+PS_ITS2_BC_AP_Oomycota<- subset_taxa(PS_BC_AP, Family == "Peronosporaceae")
+
+#Trichothecium- Hypocreales order - nothing interesting 
+PS_ITS2_BC_AP_Hypocreales<- subset_taxa(PS_BC_AP, Order == "Hypocreales")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Hypocreales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Rhytismataceae - no hit 
+PS_ITS2_BC_AP_Rhytismataceae<- subset_taxa(PS_BC_AP, Family == "Rhytismataceae")
+
+###RUSTS####
+
+#Gymnosporangiaceae - No hit 
+PS_ITS2_BC_AP_Gymnosporangiaceae<- subset_taxa(PS_BC_AP, Family == "Gymnosporangiaceae")
+
+#Ploettnerulaceae
+PS_ITS2_BC_AP_Ploettnerulaceae<- subset_taxa(PS_BC_AP, Family == "Ploettnerulaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Ploettnerulaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Cyphellaceae
+PS_ITS2_BC_AP_Cyphellaceae<- subset_taxa(PS_BC_AP, Family == "Cyphellaceae")
+
+#Amylocorticiales
+PS_ITS2_BC_AP_Amylocorticiales<- subset_taxa(PS_BC_AP, Family == "Amylocorticiales")
+
+#Ceratobasidiaceae
+PS_ITS2_BC_AP_Ceratobasidiaceae<- subset_taxa(PS_BC_AP, Family == "Ceratobasidiaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Ploettnerulaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Helicobasidiaceae - no hit 
+
+PS_ITS2_BC_AP_Helicobasidiaceae<- subset_taxa(PS_BC_AP, Family == "Helicobasidiaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Ploettnerulaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Lachnocladiaceae
+PS_ITS2_BC_AP_Lachnocladiaceae<- subset_taxa(PS_BC_AP, Family == "Lachnocladiaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_AP_Lachnocladiaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+```
+
+```{r Cherry - HeatMap and Relative Abundance  , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+# Heat Map 
+meco_BEE_BCC_C<- phyloseq2meco(PS_BC_C)
+
+meta(PS_BC_C)
+ 
+b1_BC_C <- trans_abund$new(dataset = meco_BEE_BCC_C, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_BC_C$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+#Relative Abundance 
+classtaxa_PS_BC_C <- get_taxadf(obj=PS_BC_C, taxlevel=7)
+# colnames(taxmat) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species"
+
+# The 30 most abundant taxonomy will be visualized by default (parameter `topn=30`). 
+fclass_Cherry <- ggbartax(obj=classtaxa_PS_BC_C, 
+                   facetNames="Sample.type", 
+                   plotgroup=TRUE, 
+                   topn=30) +
+  xlab(NULL) +
+  ylab("Relative abundance (%)") +
+  guides(fill= guide_legend(keywidth = 0.5, keyheight = 0.5, ncol=4))
+
+fclass_Cherry
+
+```
+
+```{r Cherry - Trees  , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+#Pleosporaceae - Alternaria 
+PS_ITS2_BC_C_Pleosporaceae<- subset_taxa(PS_BC_C, Family == "Pleosporaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Pleosporaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Venturiaceae
+PS_ITS2_BC_C_Venturiaceae<- subset_taxa(PS_BC_C, Family == "Venturiaceae")
+
+plot_tree(PS_ITS2_BC_C_Venturiaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+#Physalacriaceae - Armillaria 
+PS_ITS2_BC_C_Physalacriaceae<- subset_taxa(PS_BC_C, Family == "Physalacriaceae")
+
+plot_tree(PS_ITS2_BC_C_Physalacriaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+phyloseq::tax_table(PS_ITS2_BC_C_Physalacriaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Physalacriaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Drepanopezizaceae - 	Drepanopezizaceae
+PS_ITS2_BC_C_Helotiales<- subset_taxa(PS_BC_C, Order == "Helotiales")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Helotiales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Sclerotiniaceae - Monilinia 
+PS_ITS2_BC_C_Sclerotiniaceae<- subset_taxa(PS_BC_C, Family == "Sclerotiniaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Cyphellaceae
+PS_ITS2_BC_C_Cyphellaceae<- subset_taxa(PS_BC_C, Family == "Cyphellaceae")
+
+
+#Davidiellaceae
+PS_ITS2_BC_C_Davidiellaceae<- subset_taxa(PS_BC_C, Family == "Davidiellaceae")
+
+#Glomerellaceae
+PS_ITS2_BC_C_Glomerellaceae<- subset_taxa(PS_BC_C, Family == "Glomerellaceae")
+
+plot_tree(PS_ITS2_BC_C_Glomerellaceae, "treeonly", label.tips="Species" )
+
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Glomerellaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+PS_ITS2_BC_C_Valsaceae<- subset_taxa(PS_BC_C, Family == "Valsaceae")
+
+#plot_tree(PS_ITS2_BC_AP_Valsaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+#phyloseq::tax_table(PS_ITS2_BC_AP_Valsaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Valsaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Apiosporina morbosa - No hit 
+PS_ITS2_BC_C_Venturiaceae<- subset_taxa(PS_BC_C, Genus == "Venturiaceae")
+
+#Aspergillaceae
+PS_ITS2_BC_C_Aspergillaceae<- subset_taxa(PS_BC_C, Family == "Aspergillaceae")
+phyloseq::tax_table(PS_ITS2_BC_C_Aspergillaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Aspergillaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Diatrypaceae
+PS_ITS2_BC_C_Diatrypaceae<- subset_taxa(PS_BC_C, Family == "Diatrypaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Diatrypaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+Diaporthaceae
+PS_ITS2_BC_C_Diaporthaceae<- subset_taxa(PS_BC_C, Family == "Diaporthaceae")
+
+plot_tree(PS_ITS2_BC_C_Diaporthaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+phyloseq::tax_table(PS_ITS2_BC_C_Diaporthaceae)
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Diaporthaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Uropyxidaceae - No hits 
+PS_ITS2_BC_C_Uropyxidaceae<- subset_taxa(PS_BC_C, Family == "Uropyxidaceae")
+
+#Peronosporaceae -Phytopthara - No Hit 
+PS_ITS2_BC_C_Peronosporaceae<- subset_taxa(PS_BC_C, Family == "Peronosporaceae")
+
+#Erysiphaceae 
+PS_ITS2_BC_C_Erysiphaceae<- subset_taxa(PS_BC_C, Family == "Erysiphaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Erysiphaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Mucoraceae  - NO hits 
+PS_ITS2_BC_C_Mucoraceae<- subset_taxa(PS_BC_C, Family == "Mucoraceae")
+
+Nectriaceae
+PS_ITS2_BC_C_Nectriaceae<- subset_taxa(PS_BC_C, Family == "Nectriaceae")
+plot_tree(tax_glom(PS_ITS2_BC_C_Nectriaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+```
+
+```{r Investigate Taxonomy, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+metadata_ITS2_BC_BB <- meta(PS_BC_BB)
+
+```
+
+```{r Basic Tree  , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+phyloseq::tax_table(PS_ITS2_BC)
+
+meta_BC <- meta(PS_ITS2_BC)
+
+plot_tree(tax_glom(PS_ITS2_BC, 
+                       taxrank="Family"),
+              method = "sampledodge",
+              ladderize="left",
+              nodelabf=nodeplotblank, 
+              color="Sample.type", 
+              label.tips="Order", 
+              text.size=3, 
+              base.spacing=0.01,
+              justify="jagged",
+              shape="Province",
+              size="abundance",
+              plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+#Code works but the tree is cluttered as expected
+
+#Erwinia amylovora -- > Negative
+PS_ITS2_BC_Saccharomyces <- subset_taxa(PS_ITS2_BC, Class == "Saccharomycetes")
+
+PS_ITS2_BC_Saccharomyces
+
+plot_tree(tax_glom(PS_ITS2_BC_Saccharomyces, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Genus", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+```
+
+
+```{r Trees - Phytopathogen , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+#Erysiphaceae -contains podosphaera genus and blumeria genus 
+PS_ITS2_BC_Erysiphaceae <- subset_taxa(PS_ITS2_BC, Family == "Erysiphaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_Erysiphaceae , 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Erysiphaceae -contains podosphaera genus and blumeria genus 
+PS_ITS2_BC_agaricales <- subset_taxa(PS_ITS2_BC, Order == "Agaricales")
+
+plot_tree(tax_glom(PS_ITS2_BC_agaricales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+PS_ITS2_BC_sclerotiniaceae <- subset_taxa(PS_ITS2_BC, Family == "Sclerotiniaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+PS_ITS2_BC_Pleosporaceae <- subset_taxa(PS_ITS2_BC, Family == "Pleosporaceae")
+
+plot_tree(tax_glom(PS_ITS2_BC_Pleosporaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+```
+
+```{r Trees - Bee Pathogen , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+#Ascospheara apis - Chalkbrood disease
+PS_ITS2_BC_Onygenales <- subset_taxa(PS_ITS2_BC, Order=="Onygenales")
+
+plot_tree(tax_glom(PS_ITS2_BC_Onygenales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+
+#Ascospheara apis - Chalkbrood disease
+PS_ITS2_BC_Ascosphaeraceae <- subset_taxa(PS_ITS2_BC, Order =="Ascosphaerales")
+
+
+phy_tree(PS_ITS2_BC_Ascosphaeraceae)
+
+
+plot_tree(tax_glom(PS_ITS2_BC_Ascosphaeraceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+```
+
+2.JORDAN FARMS 
+
+```{r Heatmaps, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+# Convert the phyloseq object to a microeco object 
+
+BiocManager::install("file2meco")
+BiocManager::install("microeco")
+
+library("file2meco")
+
+library("microeco")
+
+detach("package:microeco")
+
+detach('package:file2meco')
+ 
+
+meco_BEE_ON<- phyloseq2meco(PS_ITS2_ON)
+
+ 
+b2 <- trans_abund$new(dataset = meco_BEE_ON, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b2$plot_heatmap(facet = c("Plant","Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+
+#Sclerotiniaceae - Monilinia 
+PS_ITS2_ON_Sclerotiniaceae<- subset_taxa(PS_ITS2_ON, Family == "Sclerotiniaceae")
+
+plot_tree(tax_glom(PS_ITS2_ON_Sclerotiniaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+```
+
+[1].Jordan Farm Ontario By Plant Type
+```{r SPlitting Phyloseq Objects Based on Fruit Farm , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+meta_ON <- meta(PS_ITS2_ON)
+
+PS_ON_Apple <- subset_samples(PS_ITS2_ON, Plant=="Apple")
+
+PS_ON_Blueberry<- subset_samples(PS_ITS2_ON, Plant=="Blueberry")
+
+PS_ON_Cherry <- subset_samples(PS_ITS2_ON, Plant=="Cherry")
+
+PS_ON_Peach <- subset_samples(PS_ITS2_ON, Plant=="Peach")
+
+PS_ON_Apricot <- subset_samples(PS_ITS2_ON, Plant=="Apricot")
+
+```
+
+[1].B Apple, Blueberry Cheery and WF split Heat maps
+
+```{r Heatmaps, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
+
+# Convert the phyloseq object to a microeco object 
+
+BiocManager::install("file2meco")
+BiocManager::install("microeco")
+
+library("file2meco")
+
+library("microeco")
+
+detach("package:microeco")
+
+detach('package:file2meco')
+ 
+#Apple 
+meco_BEE_ON_AP<- phyloseq2meco(PS_ON_Apple)
+
+ 
+b1_ON_AP <- trans_abund$new(dataset = meco_BEE_ON_AP, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_AP$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+
+#Blueberry 
+meco_BEE_ON_BB<- phyloseq2meco(PS_ON_Blueberry)
+
+ 
+b1_ON_BB <- trans_abund$new(dataset = meco_BEE_ON_BB, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_BB$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+#Cherry 
+meco_BEE_ON_C<- phyloseq2meco(PS_ON_Cherry)
+
+ 
+b1_ON_C <- trans_abund$new(dataset = meco_BEE_ON_C, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_C$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+#Peach
+meco_BEE_ON_P<- phyloseq2meco(PS_ON_Peach)
+
+ 
+b1_ON_P <- trans_abund$new(dataset = meco_BEE_ON_P, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_P$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+#Apricot
+meco_BEE_ON_Apricot<- phyloseq2meco(PS_ON_Apricot)
+
+ 
+b1_ON_APC <- trans_abund$new(dataset = meco_BEE_ON_Apricot, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_APC$plot_heatmap(facet = c("Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+```
+
