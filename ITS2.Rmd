@@ -1216,6 +1216,53 @@ plot_tree(tax_glom(PS_ITS2_BC_C_Nectriaceae,
           size="abundance",
           plot.margin =0.9)+
   scale_size_continuous(range = c(0.0001, 4))
+
+#Peronosporales No HIt 
+PS_ITS2_BC_C_Pythiaceae<- subset_taxa(PS_BC_C, Family == "Pythiaceae") 
+
+#Ceratobasidiaceae
+PS_ITS2_BC_C_Ceratobasidiaceae<- subset_taxa(PS_BC_C, Family == "Ceratobasidiaceae") 
+plot_tree(tax_glom(PS_ITS2_BC_C_Ceratobasidiaceae, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
+#Mycosphaerellaceae
+PS_ITS2_BC_C_Mycosphaerellaceae<- subset_taxa(PS_BC_C, Family == "Mycosphaerellaceae") 
+
+plot_tree(PS_ITS2_BC_C_Mycosphaerellaceae, "treeonly", label.tips="Species" , ladderize="left")
+
+#Cyphellaceae - No hit 
+PS_ITS2_BC_C_Cyphellaceae<- subset_taxa(PS_BC_C, Family == "Cyphellaceae")
+
+#Trichothecium- Hypocreales order - nothing interesting 
+PS_ITS2_BC_C_Hypocreales<- subset_taxa(PS_BC_C, Order == "Hypocreales")
+
+plot_tree(tax_glom(PS_ITS2_BC_C_Hypocreales, 
+                   taxrank="Species"),
+          method = "sampledodge",
+          ladderize="left",
+          nodelabf=nodeplotblank, 
+          color="Sample.type", 
+          label.tips="Species", 
+          text.size=3, 
+          base.spacing=0.01,
+          justify="jagged",
+          shape="Plant",
+          size="abundance",
+          plot.margin =0.9)+
+  scale_size_continuous(range = c(0.0001, 4))
+
 ```
 
 ```{r Investigate Taxonomy, echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE}
@@ -1458,6 +1505,10 @@ PS_ON_Peach <- subset_samples(PS_ITS2_ON, Plant=="Peach")
 
 PS_ON_Apricot <- subset_samples(PS_ITS2_ON, Plant=="Apricot")
 
+PS_ON_StoneFruits <- subset_samples(PS_ITS2_ON, Plant!="Blueberry")
+
+meta(PS_ON_StoneFruits)
+
 ```
 
 [1].B Apple, Blueberry Cheery and WF split Heat maps
@@ -1558,4 +1609,34 @@ b1_ON_APC$plot_heatmap(facet = c("Sample.type"),
                 xtext_keep = FALSE, 
                 withmargin = TRUE)
 ```
+
+
+
+```{r Ontario Stone Fruit ANalysis , echo=FALSE, eval=TRUE, include=FALSE, cache=TRUE} 
+
+meta(PS_ON_StoneFruits)
+
+library("file2meco")
+
+library("microeco")
+ 
+#Apple 
+meco_BEE_ON_StoneFruits <- phyloseq2meco(PS_ON_StoneFruits)
+
+ 
+b1_ON_StoneFruits <- trans_abund$new(dataset =meco_BEE_ON_StoneFruits, 
+
+                      taxrank = "Species", 
+
+                      ntaxa = 50)
+
+b1_ON_StoneFruits$plot_heatmap(facet = c("Plant","Sample.type"),
+                color_values = rev(RColorBrewer::brewer.pal(n = 11, 
+                                                            name = "Spectral")),
+                xtext_keep = FALSE, 
+                withmargin = TRUE)
+
+```
+
+
 
